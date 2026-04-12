@@ -178,3 +178,4 @@ else:
     title="Device Trust vs Risk Score"
     )
     st.plotly_chart(fig_device, use_container_width=True)
+    
