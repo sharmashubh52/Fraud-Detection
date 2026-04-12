@@ -1,0 +1,12 @@
+streamlit
+pandas
+numpy
+flask
+scikit-learn
+joblib
+pymongo
+dnspython
+requests
+plotly
+python-dotenv
+gunicorn
