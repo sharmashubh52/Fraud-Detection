@@ -1,27 +1,28 @@
 import pickle
 import numpy as np
+import os
 
-# Load model
-with open("model/fraud_model.pkl", "rb") as f:
+# Get absolute path to model file
+MODEL_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "fraud_model.pkl"
+)
+
+# Load model once during startup
+with open(MODEL_PATH, "rb") as f:
     model = pickle.load(f)
 
-def predict_transaction(transaction):
 
+def predict_transaction(transaction):
     transaction = np.array(transaction).reshape(1, -1)
 
-    # Get anomaly score
+    # Isolation Forest anomaly score
     score = model.decision_function(transaction)[0]
 
-    # Convert to risk percentage
+    # Convert to risk %
     risk_score = round((1 - score) * 50, 2)
-
-    # Clamp between 0–100
     risk_score = max(0, min(100, risk_score))
 
-    # Determine label
-    if score < 0:
-        prediction = "Fraud"
-    else:
-        prediction = "Normal"
+    prediction = "Fraud" if score < 0 else "Normal"
 
     return prediction, risk_score
