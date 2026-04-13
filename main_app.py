@@ -76,7 +76,7 @@ if page == "Customer Transaction":
         result = None
 
         with st.spinner("🔄 Analyzing transaction..."):
-            for attempt in range(6):   # increased retries
+            for attempt in range(6):
                 try:
                     response = requests.post(API_URL, json=payload, timeout=60)
 
@@ -84,15 +84,18 @@ if page == "Customer Transaction":
                         result = response.json()
                         break
                     else:
-                        st.write(f"Attempt {attempt+1}: backend status {response.status_code}")
+                        st.error(
+                            f"Attempt {attempt+1}: "
+                            f"status={response.status_code}\n\n{response.text}"
+                    )
 
                 except Exception as e:
-                    st.write(f"Attempt {attempt+1}: waiting for backend...")
+                    st.error(f"Attempt {attempt+1}: {str(e)}")
 
-                time.sleep(15)   # longer wait between retries
+                time.sleep(15)
 
         if result is None:
-            st.error("⚠️ Backend is still starting. Please retry after 30 seconds.")
+            st.error("⚠️ Backend is still failing after retries.")
             st.stop()
 
         colA, colB = st.columns(2)
