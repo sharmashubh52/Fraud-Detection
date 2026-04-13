@@ -69,8 +69,30 @@ if page == "Customer Transaction":
             "merchant_category": category
         }
 
-        response = requests.post(API_URL, json=payload)
-        result = response.json()
+        try:
+            response = requests.post(API_URL, json=payload, timeout=30)
+
+    # Check backend response
+            if response.status_code != 200:
+                st.error(f"⚠️ Backend Error ({response.status_code})")
+                st.code(response.text)
+                st.stop()
+
+    # Parse JSON safely
+            try:
+                result = response.json()
+            except Exception:
+                st.error("⚠️ Backend returned invalid JSON")
+                st.code(response.text)
+                st.stop()
+
+        except requests.exceptions.Timeout:
+            st.error("⏳ Backend is waking up (Render cold start). Please try again in 20–30 sec.")
+            st.stop()
+
+        except Exception as e:
+            st.error(f"❌ Request failed: {str(e)}")
+            st.stop()
 
         colA, colB = st.columns(2)
         colA.metric("Prediction", result["prediction"])
