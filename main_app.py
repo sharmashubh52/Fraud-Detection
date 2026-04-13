@@ -71,26 +71,28 @@ if page == "Customer Transaction":
             "merchant_category": category
         }
 
-        st.info("☁️ First request may take 20–30 sec because backend is on free cloud.")
+        st.info("☁️ First request may take up to 60–90 sec because backend is on free cloud.")
 
         result = None
 
         with st.spinner("🔄 Analyzing transaction..."):
-            for attempt in range(3):
+            for attempt in range(6):   # increased retries
                 try:
-                    response = requests.post(API_URL, json=payload, timeout=40)
+                    response = requests.post(API_URL, json=payload, timeout=60)
 
                     if response.status_code == 200:
                         result = response.json()
                         break
+                    else:
+                        st.write(f"Attempt {attempt+1}: backend status {response.status_code}")
 
-                except Exception:
-                    pass
+                except Exception as e:
+                    st.write(f"Attempt {attempt+1}: waiting for backend...")
 
-                time.sleep(8)
+                time.sleep(15)   # longer wait between retries
 
         if result is None:
-            st.error("⚠️ Backend is still starting. Please click once again after 10 seconds.")
+            st.error("⚠️ Backend is still starting. Please retry after 30 seconds.")
             st.stop()
 
         colA, colB = st.columns(2)
