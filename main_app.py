@@ -1,3 +1,5 @@
+import time
+
 import streamlit as st
 import requests
 from pymongo import MongoClient
@@ -25,7 +27,7 @@ div[data-testid="stMetric"] {
 
 API_URL = os.getenv(
     "API_URL",
-    "https://fraud-detection-yrkn.onrender.com/check_transaction"
+    "https://fraud-detection-yrkn.onrender.com"
 )
 MONGO_URI = os.getenv("MONGO_URI")
 
@@ -69,29 +71,26 @@ if page == "Customer Transaction":
             "merchant_category": category
         }
 
-        try:
-            response = requests.post(API_URL, json=payload, timeout=30)
+        st.info("☁️ First request may take 20–30 sec because backend is on free cloud.")
 
-    # Check backend response
-            if response.status_code != 200:
-                st.error(f"⚠️ Backend Error ({response.status_code})")
-                st.code(response.text)
-                st.stop()
+        result = None
 
-    # Parse JSON safely
-            try:
-                result = response.json()
-            except Exception:
-                st.error("⚠️ Backend returned invalid JSON")
-                st.code(response.text)
-                st.stop()
+        with st.spinner("🔄 Analyzing transaction..."):
+            for attempt in range(3):
+                try:
+                    response = requests.post(API_URL, json=payload, timeout=40)
 
-        except requests.exceptions.Timeout:
-            st.error("⏳ Backend is waking up (Render cold start). Please try again in 20–30 sec.")
-            st.stop()
+                    if response.status_code == 200:
+                        result = response.json()
+                        break
 
-        except Exception as e:
-            st.error(f"❌ Request failed: {str(e)}")
+                except Exception:
+                    pass
+
+                time.sleep(8)
+
+        if result is None:
+            st.error("⚠️ Backend is still starting. Please click once again after 10 seconds.")
             st.stop()
 
         colA, colB = st.columns(2)
