@@ -23,7 +23,10 @@ div[data-testid="stMetric"] {
 </style>
 """, unsafe_allow_html=True)
 
-API_URL = os.getenv("API_URL", "http://127.0.0.1:5000/check_transaction")
+API_URL = os.getenv(
+    "API_URL",
+    "https://fraud-detection-yrkn.onrender.com/check_transaction"
+)
 MONGO_URI = os.getenv("MONGO_URI")
 
 st.title("💳 AI Fraud Detection System")
