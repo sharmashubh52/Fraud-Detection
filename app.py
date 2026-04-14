@@ -52,12 +52,12 @@ def check_transaction():
         features = build_feature_vector(data)
         prediction, risk_score = predict_transaction(features)
 
-        record = data.copy()
-        record["prediction"] = prediction
-        record["risk_score"] = risk_score
+        #record = data.copy()
+        #record["prediction"] = prediction
+        #record["risk_score"] = risk_score
 
         # Mongo save
-        transactions_collection.insert_one(record)
+        #transactions_collection.insert_one(record)
 
         return jsonify({
             "prediction": prediction,
