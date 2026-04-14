@@ -6,6 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 import time
+from io import BytesIO
 
 st.set_page_config(page_title="FraudShield AI", page_icon="💳", layout="wide")
 
@@ -137,6 +138,12 @@ if page == "💳 Transaction Simulator":
 else:
     st.subheader("📊 Fraud Risk Command Center")
 
+    auto_refresh = st.toggle("🔄 Auto refresh every 15 sec", value=False)
+    if auto_refresh:
+        time.sleep(15)
+        st.rerun()
+
+
     client = MongoClient(MONGO_URI)
     db = client["fraud_detection_db"]
     collection = db["transactions"]
@@ -180,6 +187,20 @@ else:
         st.plotly_chart(px.line(hourly_df, x="transaction_hour", y="count",
                                 title="Hourly Transaction Velocity"), use_container_width=True)
 
+    heatmap_df = df.groupby(["transaction_hour", "prediction"]).size().reset_index(name="count")
+    heatmap = px.density_heatmap(
+        heatmap_df,
+        x="transaction_hour",
+        y="prediction",
+        z="count",
+        title="Fraud Heatmap by Hour"
+    )
+    st.plotly_chart(heatmap, use_container_width=True)
+
+    top_merchants = df.groupby("merchant_category")["risk_score"].mean().reset_index()
+    top_merchants = top_merchants.sort_values("risk_score", ascending=False)
+    st.plotly_chart(px.bar(top_merchants, x="merchant_category", y="risk_score", title="Suspicious Merchant Leaderboard"), use_container_width=True)
+
     st.plotly_chart(px.scatter(
         df,
         x="device_trust_score",
@@ -188,4 +209,8 @@ else:
         title="Device Trust vs Risk Intelligence"
     ), use_container_width=True)
 
-    st.dataframe(df.sort_values(by="risk_score", ascending=False), use_container_width=True)
+    sorted_df = df.sort_values(by="risk_score", ascending=False)
+    st.dataframe(sorted_df, use_container_width=True)
+
+    csv = sorted_df.to_csv(index=False).encode("utf-8")
+    st.download_button("⬇️ Export CSV Report", data=csv, file_name="fraud_report.csv", mime="text/csv")
