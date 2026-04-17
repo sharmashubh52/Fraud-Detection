@@ -1,28 +1,46 @@
 import pickle
 import numpy as np
 import os
+from utils.rule_engine import calculate_rule_score
 
-# Get absolute path to model file
-MODEL_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "fraud_model.pkl"
-)
+# Paths
+BASE_DIR = os.path.dirname(__file__)
 
-# Load model once during startup
-with open(MODEL_PATH, "rb") as f:
-    model = pickle.load(f)
+with open(os.path.join(BASE_DIR, "xgb_model.pkl"), "rb") as f:
+    xgb_model = pickle.load(f)
+
+with open(os.path.join(BASE_DIR, "iso_model.pkl"), "rb") as f:
+    iso_model = pickle.load(f)
 
 
-def predict_transaction(transaction):
-    transaction = np.array(transaction).reshape(1, -1)
+def hybrid_predict(features, raw_data):
+    features = [features]  # keep as list, pipeline will handle it
 
-    # Isolation Forest anomaly score
-    score = model.decision_function(transaction)[0]
+    # 1️⃣ XGBoost probability
+    xgb_prob = xgb_model.predict_proba(features)[0][1] * 100
 
-    # Convert to risk %
-    risk_score = round((1 - score) * 50, 2)
-    risk_score = max(0, min(100, risk_score))
+    # 2️⃣ Isolation Forest anomaly
+    iso_score_raw = iso_model.decision_function(features)[0]
+    iso_score = max(0, min(100, (1 - iso_score_raw) * 50))
 
-    prediction = "Fraud" if score < 0 else "Normal"
+    # 3️⃣ Rule Engine
+    rule_score, reasons = calculate_rule_score(raw_data)
 
-    return prediction, risk_score
+    # 4️⃣ Final weighted score
+    final_score = round(
+        0.5 * xgb_prob +
+        0.3 * iso_score +
+        0.2 * rule_score,
+        2
+    )
+
+    prediction = "Fraud" if final_score > 65 else "Normal"
+
+    return {
+        "prediction": prediction,
+        "risk_score": final_score,
+        "xgb_score": round(xgb_prob, 2),
+        "anomaly_score": round(iso_score, 2),
+        "rule_score": rule_score,
+        "reasons": reasons
+    }

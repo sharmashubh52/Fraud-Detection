@@ -1,30 +1,98 @@
 import pandas as pd
-from sklearn.ensemble import IsolationForest
+import numpy as np
 import pickle
-import sys
 import os
 
-# Allow import from utils folder
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import IsolationForest
+from sklearn.metrics import classification_report
 
-from utils.preprocess import preprocess_data
+from xgboost import XGBClassifier
 
+# ================= LOAD DATA =================
+df = pd.read_csv("data/credit_card_fraud_10k.csv")
 
-# Load and preprocess data
-data = preprocess_data("data/credit_card_fraud_10k.csv")
+# ================= FEATURES =================
+X = df.drop("is_fraud", axis=1)
+y = df["is_fraud"]
 
-# Remove target column if exists
-if "is_fraud" in data.columns:
-    X = data.drop("is_fraud", axis=1)
-else:
-    X = data
+# ================= COLUMNS =================
+numeric_features = [
+    "amount",
+    "transaction_hour",
+    "device_trust_score",
+    "velocity_last_24h",
+    "cardholder_age"
+]
 
-# Train model
-model = IsolationForest(contamination=0.02, random_state=42)
-model.fit(X)
+categorical_features = [
+    "merchant_category"
+]
 
-# Save model
-with open("model/fraud_model.pkl", "wb") as f:
-    pickle.dump(model, f)
+binary_features = [
+    "foreign_transaction",
+    "location_mismatch"
+]
 
-print("✅ Model trained and saved successfully!")
+# ================= PREPROCESSING =================
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", StandardScaler(), numeric_features),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_features),
+        ("bin", "passthrough", binary_features)
+    ]
+)
+
+# ================= XGBOOST MODEL =================
+xgb_model = Pipeline(steps=[
+    ("preprocessor", preprocessor),
+    ("classifier", XGBClassifier(
+        n_estimators=200,
+        max_depth=6,
+        learning_rate=0.1,
+        scale_pos_weight=5,   # handles imbalance
+        random_state=42
+    ))
+])
+
+# ================= TRAIN TEST SPLIT =================
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+# ================= TRAIN =================
+xgb_model.fit(X_train, y_train)
+
+# ================= EVALUATION =================
+y_pred = xgb_model.predict(X_test)
+print("\nXGBoost Performance:\n")
+print(classification_report(y_test, y_pred))
+
+# ================= ISOLATION FOREST =================
+# Use ONLY features (no labels)
+X_processed = preprocessor.fit_transform(X)
+
+iso_model = IsolationForest(
+    n_estimators=100,
+    contamination=0.05,
+    random_state=42
+)
+
+iso_model.fit(X_processed)
+
+# ================= SAVE MODELS =================
+os.makedirs("model", exist_ok=True)
+
+with open("model/xgb_model.pkl", "wb") as f:
+    pickle.dump(xgb_model, f)
+
+with open("model/iso_model.pkl", "wb") as f:
+    pickle.dump(iso_model, f)
+
+with open("model/preprocessor.pkl", "wb") as f:
+    pickle.dump(preprocessor, f)
+
+print("\n✅ Models trained and saved successfully!")

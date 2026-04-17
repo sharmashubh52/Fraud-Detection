@@ -32,7 +32,7 @@
 #    port = int(os.environ.get("PORT", 5000))
 #    app.run(host="0.0.0.0", port=port)
 from flask import Flask, request, jsonify
-from model.predict import predict_transaction
+from model.predict import hybrid_predict   # 🔥 CHANGED
 from utils.feature_builder import build_feature_vector
 from utils.db import transactions_collection
 import os
@@ -49,20 +49,20 @@ def check_transaction():
     try:
         data = request.get_json()
 
+        # 🔹 Step 1: Build features
         features = build_feature_vector(data)
-        prediction, risk_score = predict_transaction(features)
 
+        # 🔥 Step 2: Hybrid Prediction
+        result = hybrid_predict(features, data)
+
+        # 🔥 Step 3: Save EVERYTHING to MongoDB
         record = data.copy()
-        record["prediction"] = prediction
-        record["risk_score"] = risk_score
+        record.update(result)   # includes all scores + reasons
 
-        # Mongo save
         transactions_collection.insert_one(record)
 
-        return jsonify({
-            "prediction": prediction,
-            "risk_score": risk_score
-        })
+        # 🔥 Step 4: Return full result
+        return jsonify(result)
 
     except Exception as e:
         return jsonify({

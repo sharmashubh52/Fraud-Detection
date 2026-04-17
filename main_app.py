@@ -6,7 +6,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 import time
-from io import BytesIO
 
 st.set_page_config(page_title="FraudShield AI", page_icon="💳", layout="wide")
 
@@ -69,6 +68,7 @@ if page == "💳 Transaction Simulator":
     mismatch_val = 1 if mismatch == "Yes" else 0
 
     if st.button("🔍 Analyze Transaction", use_container_width=True):
+
         payload = {
             "amount": amount,
             "transaction_hour": hour,
@@ -81,6 +81,7 @@ if page == "💳 Transaction Simulator":
         }
 
         result = None
+
         with st.spinner("🔄 Running AI risk analysis..."):
             for _ in range(6):
                 try:
@@ -96,43 +97,69 @@ if page == "💳 Transaction Simulator":
             st.error("⚠️ Backend temporarily unavailable. Retry in a few seconds.")
             st.stop()
 
-        c1, c2 = st.columns(2)
-        c1.metric("Prediction", result["prediction"])
-        c2.metric("Risk Score", f"{result['risk_score']}%")
+        # ================= HYBRID METRICS =================
+        c1, c2, c3, c4 = st.columns(4)
 
+        c1.metric("Final Decision", result["prediction"])
+        c2.metric("Risk Score", f"{result['risk_score']}%")
+        c3.metric("ML Score (XGB)", f"{result['xgb_score']}%")
+        c4.metric("Anomaly Score", f"{result['anomaly_score']}%")
+
+        c5, _ = st.columns(2)
+        c5.metric("Rule Score", f"{result['rule_score']}%")
+
+        # ================= GAUGE =================
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
             value=result["risk_score"],
             title={'text': "Fraud Risk Index"},
             gauge={
                 'axis': {'range': [0, 100]},
-                'bar': {'thickness': 0.35},
                 'steps': [
-                    {'range': [0, 35], 'color': '#1f2937'},
-                    {'range': [35, 70], 'color': '#374151'},
-                    {'range': [70, 100], 'color': '#4b5563'},
+                    {'range': [0, 40], 'color': '#1f2937'},
+                    {'range': [40, 75], 'color': '#374151'},
+                    {'range': [75, 100], 'color': '#4b5563'},
                 ]
             }
         ))
         st.plotly_chart(fig, use_container_width=True)
 
-        risk_factors = []
-        if amount > 50000:
-            risk_factors.append("High transaction amount")
-        if foreign_val:
-            risk_factors.append("Foreign transaction")
-        if mismatch_val:
-            risk_factors.append("Location mismatch")
-        if device_score < 0.3:
-            risk_factors.append("Low device trust")
+        # ================= CONTRIBUTION =================
+        contrib_df = pd.DataFrame({
+            "Component": ["XGBoost", "Anomaly", "Rules"],
+            "Score": [
+                result["xgb_score"],
+                result["anomaly_score"],
+                result["rule_score"]
+            ]
+        })
 
-        if risk_factors:
-            st.warning("⚠️ AI Risk Drivers: " + " • ".join(risk_factors))
+        st.plotly_chart(
+            px.bar(contrib_df, x="Component", y="Score",
+                   title="Fraud Engine Contribution"),
+            use_container_width=True
+        )
 
-        if result["prediction"] == "Fraud":
-            st.error("🚨 Transaction flagged — recommend hard block + manual review")
+        # ================= REASONS =================
+        if result.get("reasons"):
+            st.warning("⚠️ AI Risk Drivers:")
+            for r in result["reasons"]:
+                st.write(f"• {r}")
+
+        # ================= RISK ZONE =================
+        if result["risk_score"] > 75:
+            st.error("🔴 High Risk Zone")
+        elif result["risk_score"] > 40:
+            st.warning("🟠 Medium Risk Zone")
         else:
-            st.success("✅ Transaction approved within policy thresholds")
+            st.success("🟢 Low Risk Zone")
+
+        # ================= FINAL MESSAGE =================
+        if result["prediction"] == "Fraud":
+            st.error("🚨 FRAUD ALERT — Immediate Block Recommended")
+        else:
+            st.success("✅ Transaction Approved — Within Safe Threshold")
+
 
 # ================= ADMIN =================
 else:
@@ -142,7 +169,6 @@ else:
     if auto_refresh:
         time.sleep(15)
         st.rerun()
-
 
     client = MongoClient(MONGO_URI)
     db = client["fraud_detection_db"]
@@ -170,47 +196,77 @@ else:
     k3.metric("Fraud Rate", f"{fraud_rate}%")
     k4.metric("Avg Risk", f"{avg_risk}%")
 
+    # ================= HYBRID METRICS =================
+    colA, colB, colC = st.columns(3)
+    colA.metric("Avg ML Score", round(df["xgb_score"].mean(), 2))
+    colB.metric("Avg Anomaly Score", round(df["anomaly_score"].mean(), 2))
+    colC.metric("Avg Rule Score", round(df["rule_score"].mean(), 2))
+
+    # ================= VISUALS =================
     row1a, row1b = st.columns(2)
+
     with row1a:
-        st.plotly_chart(px.pie(df, names="prediction", title="Fraud vs Normal"), use_container_width=True)
+        st.plotly_chart(px.pie(df, names="prediction",
+                               title="Fraud vs Normal"),
+                        use_container_width=True)
+
     with row1b:
-        st.plotly_chart(px.histogram(df, x="risk_score", color="prediction", nbins=20,
-                                     title="Risk Score Distribution"), use_container_width=True)
+        st.plotly_chart(px.histogram(
+            df, x="risk_score", color="prediction", nbins=20,
+            title="Risk Score Distribution"),
+            use_container_width=True)
 
+    # ================= BUSINESS =================
     row2a, row2b = st.columns(2)
-    with row2a:
-        category_df = df.groupby("merchant_category").size().reset_index(name="count")
-        st.plotly_chart(px.bar(category_df, x="merchant_category", y="count",
-                               title="Merchant Category Exposure"), use_container_width=True)
-    with row2b:
-        hourly_df = df.groupby("transaction_hour").size().reset_index(name="count")
-        st.plotly_chart(px.line(hourly_df, x="transaction_hour", y="count",
-                                title="Hourly Transaction Velocity"), use_container_width=True)
 
-    heatmap_df = df.groupby(["transaction_hour", "prediction"]).size().reset_index(name="count")
-    heatmap = px.density_heatmap(
-        heatmap_df,
+    with row2a:
+        st.plotly_chart(px.bar(
+            df.groupby("merchant_category").size().reset_index(name="count"),
+            x="merchant_category", y="count",
+            title="Merchant Category Exposure"),
+            use_container_width=True)
+
+    with row2b:
+        st.plotly_chart(px.line(
+            df.groupby("transaction_hour").size().reset_index(name="count"),
+            x="transaction_hour", y="count",
+            title="Hourly Transaction Velocity"),
+            use_container_width=True)
+
+    # ================= HEATMAP =================
+    st.plotly_chart(px.density_heatmap(
+        df.groupby(["transaction_hour", "prediction"])
+        .size().reset_index(name="count"),
         x="transaction_hour",
         y="prediction",
         z="count",
-        title="Fraud Heatmap by Hour"
-    )
-    st.plotly_chart(heatmap, use_container_width=True)
+        title="Fraud Heatmap by Hour"),
+        use_container_width=True)
 
-    top_merchants = df.groupby("merchant_category")["risk_score"].mean().reset_index()
-    top_merchants = top_merchants.sort_values("risk_score", ascending=False)
-    st.plotly_chart(px.bar(top_merchants, x="merchant_category", y="risk_score", title="Suspicious Merchant Leaderboard"), use_container_width=True)
-
+    # ================= SCATTER =================
     st.plotly_chart(px.scatter(
         df,
         x="device_trust_score",
         y="risk_score",
         color="prediction",
-        title="Device Trust vs Risk Intelligence"
-    ), use_container_width=True)
+        title="Device Trust vs Risk Intelligence"),
+        use_container_width=True)
 
+    # ================= HYBRID DISTRIBUTION =================
+    st.plotly_chart(px.histogram(df, x="xgb_score",
+                                 title="ML Score Distribution"),
+                    use_container_width=True)
+
+    st.plotly_chart(px.histogram(df, x="anomaly_score",
+                                 title="Anomaly Score Distribution"),
+                    use_container_width=True)
+
+    # ================= TABLE =================
     sorted_df = df.sort_values(by="risk_score", ascending=False)
     st.dataframe(sorted_df, use_container_width=True)
 
+    # ================= EXPORT =================
     csv = sorted_df.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Export CSV Report", data=csv, file_name="fraud_report.csv", mime="text/csv")
+    st.download_button("⬇️ Export CSV Report", data=csv,
+                       file_name="fraud_report.csv",
+                       mime="text/csv")
