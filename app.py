@@ -33,7 +33,6 @@
 #    app.run(host="0.0.0.0", port=port)
 from flask import Flask, request, jsonify
 from model.predict import hybrid_predict   # 🔥 CHANGED
-from utils.feature_builder import build_feature_vector
 from utils.db import transactions_collection
 import os
 
@@ -65,9 +64,8 @@ def check_transaction():
         return jsonify(result)
 
     except Exception as e:
-        return jsonify({
-            "error": str(e)
-        }), 500
+        print("ERROR:", str(e))  # 👈 ADD THIS LINE
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

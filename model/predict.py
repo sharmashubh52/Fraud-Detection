@@ -1,46 +1,86 @@
+import os
 import pickle
 import numpy as np
-import os
-from utils.rule_engine import calculate_rule_score
 
-# Paths
-BASE_DIR = os.path.dirname(__file__)
-
-with open(os.path.join(BASE_DIR, "xgb_model.pkl"), "rb") as f:
+# ================= LOAD MODELS =================
+with open("model/xgb_model.pkl", "rb") as f:
     xgb_model = pickle.load(f)
 
-with open(os.path.join(BASE_DIR, "iso_model.pkl"), "rb") as f:
+with open("model/iso_model.pkl", "rb") as f:
     iso_model = pickle.load(f)
 
+with open("model/preprocessor.pkl", "rb") as f:
+    preprocessor = pickle.load(f)
 
-def hybrid_predict(features, raw_data):
-    features = [features]  # keep as list, pipeline will handle it
 
-    # 1️⃣ XGBoost probability
-    xgb_prob = xgb_model.predict_proba(features)[0][1] * 100
+# ================= RULE ENGINE =================
+def rule_engine(data):
+    score = 0
+    reasons = []
 
-    # 2️⃣ Isolation Forest anomaly
-    iso_score_raw = iso_model.decision_function(features)[0]
-    iso_score = max(0, min(100, (1 - iso_score_raw) * 50))
+    if data.get("amount", 0) > 50000:
+        score += 30
+        reasons.append("High transaction amount")
 
-    # 3️⃣ Rule Engine
-    rule_score, reasons = calculate_rule_score(raw_data)
+    if data.get("foreign_transaction", 0) == 1:
+        score += 25
+        reasons.append("Foreign transaction")
 
-    # 4️⃣ Final weighted score
-    final_score = round(
-        0.5 * xgb_prob +
-        0.3 * iso_score +
-        0.2 * rule_score,
-        2
-    )
+    if data.get("location_mismatch", 0) == 1:
+        score += 25
+        reasons.append("Location mismatch")
 
-    prediction = "Fraud" if final_score > 65 else "Normal"
+    if data.get("device_trust_score", 1) < 0.3:
+        score += 20
+        reasons.append("Low device trust")
 
-    return {
-        "prediction": prediction,
-        "risk_score": final_score,
-        "xgb_score": round(xgb_prob, 2),
-        "anomaly_score": round(iso_score, 2),
-        "rule_score": rule_score,
-        "reasons": reasons
-    }
+    return min(score, 100), reasons
+
+
+# ================= MAIN FUNCTION =================
+def predict_transaction(data):
+    try:
+        # ================= PREPARE INPUT =================
+        features = [data]  # model expects list of dicts
+
+        # ================= XGBOOST =================
+        xgb_prob = xgb_model.predict_proba(features)[0][1]
+        xgb_score = round(xgb_prob * 100, 2)
+
+        # ================= PREPROCESS =================
+        processed = preprocessor.transform(features)
+
+        # ================= ANOMALY =================
+        anomaly_raw = iso_model.decision_function(processed)[0]
+
+        anomaly_score = (1 - anomaly_raw) * 50
+        anomaly_score = round(max(0, min(100, anomaly_score)), 2)
+
+        # ================= RULE ENGINE =================
+        rule_score, reasons = rule_engine(data)
+
+        # ================= FINAL SCORE =================
+        final_score = (
+            0.5 * xgb_score +
+            0.3 * anomaly_score +
+            0.2 * rule_score
+        )
+
+        final_score = round(min(100, final_score), 2)
+
+        # ================= DECISION =================
+        prediction = "Fraud" if final_score > 60 else "Normal"
+
+        return {
+            "prediction": prediction,
+            "risk_score": final_score,
+            "xgb_score": xgb_score,
+            "anomaly_score": anomaly_score,
+            "rule_score": rule_score,
+            "reasons": reasons
+        }
+
+    except Exception as e:
+        # VERY IMPORTANT FOR DEBUGGING
+        print("PREDICTION ERROR:", str(e))
+        raise e
