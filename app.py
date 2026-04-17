@@ -20,7 +20,7 @@ def check_transaction():
         features = build_feature_vector(data)
 
         # ✅ Step 2: Hybrid Prediction
-        result = hybrid_predict(features)
+        result = hybrid_predict(features, data)
 
         # ✅ Step 3: Save to MongoDB
         record = data.copy()

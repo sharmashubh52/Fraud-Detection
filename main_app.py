@@ -59,7 +59,7 @@ if page == "💳 Transaction Simulator":
 
         for _ in range(5):
             try:
-                res = requests.post(API_URL, json=payload)
+                res = requests.post(API_URL, json=payload, timeout=30)
                 if res.status_code == 200:
                     result = res.json()
                     break
@@ -75,10 +75,9 @@ if page == "💳 Transaction Simulator":
 
         c1.metric("Decision", result["prediction"])
         c2.metric("Risk", f"{result['risk_score']}%")
-        c3.metric("ML Score", f"{result['xgb_score']}%")
-        c4.metric("Anomaly", f"{result['anomaly_score']}%")
-
-        st.metric("Rule Score", f"{result['rule_score']}%")
+        c3.metric("ML Score", f"{result.get('xgb_score', 0)}%")
+        c4.metric("Anomaly", f"{result.get('anomaly_score', 0)}%")
+        st.metric("Rule Score", f"{result.get('rule_score', 0)}%")
 
         # Gauge
         fig = go.Figure(go.Indicator(
@@ -96,7 +95,12 @@ if page == "💳 Transaction Simulator":
 # ================= ADMIN =================
 else:
     client = MongoClient(MONGO_URI)
-    df = pd.DataFrame(list(client["fraud_detection_db"]["transactions"].find()))
+    data = list(client["fraud_detection_db"]["transactions"].find())
+
+    for item in data:
+        item["_id"] = str(item["_id"])   # 🔥 IMPORTANT FIX
+
+    df = pd.DataFrame(data)
 
     if df.empty:
         st.warning("No data")

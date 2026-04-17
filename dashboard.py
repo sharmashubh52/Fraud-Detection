@@ -15,6 +15,9 @@ data = list(collection.find())
 if len(data) == 0:
     st.warning("No transactions found.")
 else:
+    for item in data:
+        item["_id"] = str(item["_id"])   # 👈 FIX
+
     df = pd.DataFrame(data)
 
     # Remove MongoDB ID column
