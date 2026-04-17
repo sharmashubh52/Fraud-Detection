@@ -102,11 +102,11 @@ if page == "💳 Transaction Simulator":
 
         c1.metric("Final Decision", result["prediction"])
         c2.metric("Risk Score", f"{result['risk_score']}%")
-        c3.metric("ML Score (XGB)", f"{result['xgb_score']}%")
-        c4.metric("Anomaly Score", f"{result['anomaly_score']}%")
+        c3.metric("ML Score (XGB)", f"{result.get('xgb_score', 'N/A')}%")
+        c4.metric("Anomaly Score", f"{result.get('anomaly_score', 'N/A')}%")
 
         c5, _ = st.columns(2)
-        c5.metric("Rule Score", f"{result['rule_score']}%")
+        c5.metric("Rule Score", f"{result.get('rule_score', 'N/A')}%")
 
         # ================= GAUGE =================
         fig = go.Figure(go.Indicator(
