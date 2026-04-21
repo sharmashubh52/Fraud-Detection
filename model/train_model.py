@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 import pickle
 import os
 
@@ -9,7 +8,6 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import classification_report
-
 from xgboost import XGBClassifier
 
 # ================= LOAD DATA =================
@@ -37,7 +35,7 @@ binary_features = [
     "location_mismatch"
 ]
 
-# ================= PREPROCESSING =================
+# ================= PREPROCESSOR =================
 preprocessor = ColumnTransformer(
     transformers=[
         ("num", StandardScaler(), numeric_features),
@@ -46,35 +44,42 @@ preprocessor = ColumnTransformer(
     ]
 )
 
-# ================= XGBOOST MODEL =================
-xgb_model = Pipeline(steps=[
+# ================= XGBOOST PIPELINE =================
+xgb_pipeline = Pipeline(steps=[
     ("preprocessor", preprocessor),
     ("classifier", XGBClassifier(
         n_estimators=200,
         max_depth=6,
         learning_rate=0.1,
-        scale_pos_weight=5,   # handles imbalance
+        scale_pos_weight=5,
         random_state=42
     ))
 ])
 
 # ================= TRAIN TEST SPLIT =================
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
+    X, y,
+    test_size=0.2,
+    random_state=42,
+    stratify=y
 )
 
-# ================= TRAIN =================
-xgb_model.fit(X_train, y_train)
+# ================= TRAIN MODEL =================
+xgb_pipeline.fit(X_train, y_train)
 
 # ================= EVALUATION =================
-y_pred = xgb_model.predict(X_test)
+y_pred = xgb_pipeline.predict(X_test)
+
 print("\nXGBoost Performance:\n")
 print(classification_report(y_test, y_pred))
 
-# ================= ISOLATION FOREST =================
-# Use ONLY features (no labels)
-X_processed = preprocessor.fit_transform(X)
+# ================= GET TRAINED PREPROCESSOR =================
+trained_preprocessor = xgb_pipeline.named_steps["preprocessor"]
 
+# ================= TRANSFORM DATA FOR ISOLATION FOREST =================
+X_processed = trained_preprocessor.transform(X)
+
+# ================= ISOLATION FOREST =================
 iso_model = IsolationForest(
     n_estimators=100,
     contamination=0.05,
@@ -86,13 +91,16 @@ iso_model.fit(X_processed)
 # ================= SAVE MODELS =================
 os.makedirs("model", exist_ok=True)
 
+# Save full pipeline (best practice)
 with open("model/xgb_model.pkl", "wb") as f:
-    pickle.dump(xgb_model, f)
+    pickle.dump(xgb_pipeline, f)
 
+# Save Isolation Forest
 with open("model/iso_model.pkl", "wb") as f:
     pickle.dump(iso_model, f)
 
+# Save SAME preprocessor used in pipeline
 with open("model/preprocessor.pkl", "wb") as f:
-    pickle.dump(preprocessor, f)
+    pickle.dump(trained_preprocessor, f)
 
 print("\n✅ Models trained and saved successfully!")

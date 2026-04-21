@@ -1,35 +1,43 @@
 import pickle
-import numpy as np
+import pandas as pd
 
-# ===== LOAD MODELS =====
-with open("model/fraud_model.pkl", "rb") as f:
-    anomaly_model = pickle.load(f)
-
+# ===== LOAD MODELS (LOAD ONCE) =====
 with open("model/xgb_model.pkl", "rb") as f:
     xgb_model = pickle.load(f)
 
+with open("model/iso_model.pkl", "rb") as f:
+    anomaly_model = pickle.load(f)
 
-# ===== HYBRID PREDICT =====
-def hybrid_predict(features, raw_data):
+with open("model/preprocessor.pkl", "rb") as f:
+    preprocessor = pickle.load(f)
 
-    # Convert to numpy
-    X = np.array(features).reshape(1, -1)
 
-    # ✅ FIX: Feature size validation (prevents 12 vs 9 error)
-    if hasattr(xgb_model, "n_features_in_"):
-        if X.shape[1] != xgb_model.n_features_in_:
-            raise ValueError(
-                f"Feature mismatch: Expected {xgb_model.n_features_in_}, got {X.shape[1]}"
-            )
+# ===== HYBRID PREDICTION FUNCTION =====
+def hybrid_predict(raw_data):
 
-    # ===== XGBOOST =====
-    xgb_prob = xgb_model.predict_proba(X)[0][1]
+    # ✅ Convert input JSON → DataFrame (CRITICAL FIX)
+    input_df = pd.DataFrame([raw_data])
+
+    # ===== XGBOOST PREDICTION =====
+    try:
+        xgb_prob = xgb_model.predict_proba(input_df)[0][1]
+    except Exception as e:
+        raise ValueError(f"XGBoost prediction error: {str(e)}")
+
     xgb_score = round(xgb_prob * 100, 2)
 
-    # ===== ANOMALY =====
-    anomaly_raw = anomaly_model.decision_function(X)[0]
-    anomaly_score = round((1 - anomaly_raw) * 50, 2)
-    anomaly_score = max(0, min(100, anomaly_score))
+    # ===== ANOMALY DETECTION =====
+    try:
+        # Transform using SAME preprocessor used in training
+        X_processed = preprocessor.transform(input_df)
+
+        anomaly_raw = anomaly_model.decision_function(X_processed)[0]
+
+        anomaly_score = round((1 - anomaly_raw) * 50, 2)
+        anomaly_score = max(0, min(100, anomaly_score))
+
+    except Exception as e:
+        raise ValueError(f"Anomaly model error: {str(e)}")
 
     # ===== RULE ENGINE =====
     rule_score = 0
@@ -51,6 +59,10 @@ def hybrid_predict(features, raw_data):
         rule_score += 20
         reasons.append("Low device trust")
 
+    if raw_data.get("velocity_last_24h", 0) > 10:
+        rule_score += 10
+        reasons.append("High transaction velocity")
+
     rule_score = min(100, rule_score)
 
     # ===== FINAL SCORE =====
@@ -63,6 +75,7 @@ def hybrid_predict(features, raw_data):
 
     prediction = "Fraud" if final_score > 60 else "Normal"
 
+    # ===== RESPONSE =====
     return {
         "prediction": prediction,
         "risk_score": final_score,

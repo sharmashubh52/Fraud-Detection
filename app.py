@@ -1,41 +1,64 @@
 from flask import Flask, request, jsonify
 from model.predict import hybrid_predict
-from utils.feature_builder import build_feature_vector
 from utils.db import transactions_collection
 import os
+import logging
 
 app = Flask(__name__)
 
+# ===== LOGGING SETUP =====
+logging.basicConfig(level=logging.INFO)
+
+# ===== HEALTH CHECK =====
 @app.route("/")
 def home():
     return jsonify({"message": "Fraud Detection API Running"})
 
-
+# ===== MAIN ENDPOINT =====
 @app.route("/check_transaction", methods=["POST"])
 def check_transaction():
     try:
         data = request.get_json()
 
-        # ✅ Step 1: Feature Engineering
-        features = build_feature_vector(data)
+        # ===== BASIC VALIDATION =====
+        required_fields = [
+            "amount",
+            "transaction_hour",
+            "merchant_category",
+            "foreign_transaction",
+            "location_mismatch",
+            "device_trust_score",
+            "velocity_last_24h",
+            "cardholder_age"
+        ]
 
-        # ✅ Step 2: Hybrid Prediction
-        result = hybrid_predict(features, data)
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing field: {field}"}), 400
 
-        # ✅ Step 3: Save to MongoDB
+        # ===== LOG INPUT =====
+        logging.info(f"Incoming request: {data}")
+
+        # ===== PREDICTION (NO FEATURE BUILDER) =====
+        result = hybrid_predict(data)
+
+        # ===== STORE IN DB =====
         record = data.copy()
         record.update(result)
 
         transactions_collection.insert_one(record)
 
-        # ✅ Step 4: Return response
+        # ===== LOG OUTPUT =====
+        logging.info(f"Prediction result: {result}")
+
         return jsonify(result)
 
     except Exception as e:
-        print("ERROR:", str(e))  # helpful for Render logs
+        logging.error(f"ERROR: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 
+# ===== RUN APP =====
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
