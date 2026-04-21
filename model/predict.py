@@ -13,19 +13,25 @@ with open("model/xgb_model.pkl", "rb") as f:
 def hybrid_predict(features, raw_data):
 
     # Convert to numpy
-    if X.shape[1] != xgb_model.n_features_in_:
-    raise ValueError(f"Feature mismatch: Expected {xgb_model.n_features_in_}, got {X.shape[1]}")
+    X = np.array(features).reshape(1, -1)
 
-    # ===== XGBOOST (Supervised) =====
+    # ✅ FIX: Feature size validation (prevents 12 vs 9 error)
+    if hasattr(xgb_model, "n_features_in_"):
+        if X.shape[1] != xgb_model.n_features_in_:
+            raise ValueError(
+                f"Feature mismatch: Expected {xgb_model.n_features_in_}, got {X.shape[1]}"
+            )
+
+    # ===== XGBOOST =====
     xgb_prob = xgb_model.predict_proba(X)[0][1]
     xgb_score = round(xgb_prob * 100, 2)
 
-    # ===== ANOMALY (Isolation Forest) =====
+    # ===== ANOMALY =====
     anomaly_raw = anomaly_model.decision_function(X)[0]
     anomaly_score = round((1 - anomaly_raw) * 50, 2)
     anomaly_score = max(0, min(100, anomaly_score))
 
-    # ===== RULE ENGINE (USE RAW DATA, NOT ARRAY) =====
+    # ===== RULE ENGINE =====
     rule_score = 0
     reasons = []
 
@@ -47,7 +53,7 @@ def hybrid_predict(features, raw_data):
 
     rule_score = min(100, rule_score)
 
-    # ===== FINAL WEIGHTED SCORE =====
+    # ===== FINAL SCORE =====
     final_score = round(
         (0.6 * xgb_score) +
         (0.25 * anomaly_score) +
@@ -55,7 +61,6 @@ def hybrid_predict(features, raw_data):
         2
     )
 
-    # ===== FINAL DECISION =====
     prediction = "Fraud" if final_score > 60 else "Normal"
 
     return {
