@@ -6,13 +6,31 @@ import logging
 
 app = Flask(__name__)
 
-# ===== LOGGING SETUP =====
+# ===== LOGGING =====
 logging.basicConfig(level=logging.INFO)
+
+
+# ===== CLEAN NUMPY TYPES (Mongo Fix) =====
+def clean_numpy_types(obj):
+    import numpy as np
+
+    if isinstance(obj, dict):
+        return {k: clean_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_numpy_types(i) for i in obj]
+    elif isinstance(obj, (np.integer,)):
+        return int(obj)
+    elif isinstance(obj, (np.floating,)):
+        return float(obj)
+    else:
+        return obj
+
 
 # ===== HEALTH CHECK =====
 @app.route("/")
 def home():
     return jsonify({"message": "Fraud Detection API Running"})
+
 
 # ===== MAIN ENDPOINT =====
 @app.route("/check_transaction", methods=["POST"])
@@ -20,7 +38,11 @@ def check_transaction():
     try:
         data = request.get_json()
 
-        # ===== BASIC VALIDATION =====
+        # ✅ Validate JSON
+        if not data:
+            return jsonify({"error": "Invalid JSON payload"}), 400
+
+        # ✅ Required fields
         required_fields = [
             "amount",
             "transaction_hour",
@@ -36,19 +58,23 @@ def check_transaction():
             if field not in data:
                 return jsonify({"error": f"Missing field: {field}"}), 400
 
-        # ===== LOG INPUT =====
         logging.info(f"Incoming request: {data}")
 
-        # ===== PREDICTION (NO FEATURE BUILDER) =====
+        # ===== PREDICTION =====
         result = hybrid_predict(data)
 
         # ===== STORE IN DB =====
         record = data.copy()
         record.update(result)
 
-        transactions_collection.insert_one(record)
+        # ✅ Clean numpy types before insert
+        record = clean_numpy_types(record)
 
-        # ===== LOG OUTPUT =====
+        try:
+            transactions_collection.insert_one(record)
+        except Exception as db_error:
+            logging.error(f"MongoDB insert failed: {str(db_error)}")
+
         logging.info(f"Prediction result: {result}")
 
         return jsonify(result)

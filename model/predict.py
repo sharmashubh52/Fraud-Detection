@@ -1,39 +1,40 @@
 import pickle
 import pandas as pd
+import os
 
-# ===== LOAD MODELS (LOAD ONCE) =====
-with open("model/xgb_model.pkl", "rb") as f:
+# ===== LOAD MODELS SAFELY =====
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+with open(os.path.join(BASE_DIR, "../model/xgb_model.pkl"), "rb") as f:
     xgb_model = pickle.load(f)
 
-with open("model/iso_model.pkl", "rb") as f:
+with open(os.path.join(BASE_DIR, "../model/iso_model.pkl"), "rb") as f:
     anomaly_model = pickle.load(f)
 
-with open("model/preprocessor.pkl", "rb") as f:
+with open(os.path.join(BASE_DIR, "../model/preprocessor.pkl"), "rb") as f:
     preprocessor = pickle.load(f)
 
 
 # ===== HYBRID PREDICTION FUNCTION =====
 def hybrid_predict(raw_data):
 
-    # ✅ Convert input JSON → DataFrame (CRITICAL FIX)
+    # ✅ Convert JSON → DataFrame
     input_df = pd.DataFrame([raw_data])
 
-    # ===== XGBOOST PREDICTION =====
+    # ===== XGBOOST =====
     try:
         xgb_prob = xgb_model.predict_proba(input_df)[0][1]
     except Exception as e:
         raise ValueError(f"XGBoost prediction error: {str(e)}")
 
-    xgb_score = round(xgb_prob * 100, 2)
+    xgb_score = round(float(xgb_prob) * 100, 2)
 
     # ===== ANOMALY DETECTION =====
     try:
-        # Transform using SAME preprocessor used in training
         X_processed = preprocessor.transform(input_df)
-
         anomaly_raw = anomaly_model.decision_function(X_processed)[0]
 
-        anomaly_score = round((1 - anomaly_raw) * 50, 2)
+        anomaly_score = round((1 - float(anomaly_raw)) * 50, 2)
         anomaly_score = max(0, min(100, anomaly_score))
 
     except Exception as e:
@@ -75,12 +76,12 @@ def hybrid_predict(raw_data):
 
     prediction = "Fraud" if final_score > 60 else "Normal"
 
-    # ===== RESPONSE =====
+    # ===== RETURN CLEAN (Mongo-safe types) =====
     return {
-        "prediction": prediction,
-        "risk_score": final_score,
-        "xgb_score": xgb_score,
-        "anomaly_score": anomaly_score,
-        "rule_score": rule_score,
-        "reasons": reasons
+        "prediction": str(prediction),
+        "risk_score": float(final_score),
+        "xgb_score": float(xgb_score),
+        "anomaly_score": float(anomaly_score),
+        "rule_score": float(rule_score),
+        "reasons": [str(r) for r in reasons]
     }
